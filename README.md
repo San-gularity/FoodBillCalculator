@@ -71,7 +71,8 @@ Scan receipt → Review what was read → Add people → Tap people on each item
 ```
 
 1. **Items** — scan a receipt, paste its text, or type items in. Tax, tip/fees and the
-   printed receipt total live here too.
+   printed receipt total live here too. A long receipt can be scanned in **several photos**:
+   pick them all at once, or add the next part from the review screen.
 2. **People** — type a name, press Enter. Chips, no dialogs. Names you've used before are
    offered as one-tap suggestions ("Add all" puts the usual crowd on the bill at once).
 3. **Assign** — tap a person's chip on an item to add or remove them. "Everyone" assigns
@@ -171,6 +172,12 @@ Image → image.js (downscale, greyscale, contrast)
   silently, medium shows a ⚠ and a one-tap "confirm", low blocks the "Add to bill" button
   until the user fills it in. Items whose price column was missed, or whose line the OCR
   wasn't sure about, are kept as rows that need a price rather than being dropped.
+* **Receipts in more than one photo.** `scanReceiptImages()` runs each image through the
+  same pipeline and `merge-drafts.js` joins the parts: items keep their order, a run of
+  lines caught in two photos is counted once, and totals are taken from whichever photo
+  shows them. A single overlapping line is ambiguous (two Cokes look like one Coke shot
+  twice), so it is only dropped when doing so matches the printed subtotal — otherwise it is
+  flagged for you. Edits you have already made survive adding another photo.
 * **Real-receipt handling.** Long item names that wrap onto a second line are joined back
   together (`Chings Singapore Curry Noodles` + `300g`), a name printed twice in a row is one
   item (even when OCR garbles a character in the repeat), numbered tax lines (`Tax2 (1.25%)`)
@@ -251,6 +258,8 @@ Long-term cloud plan (backend, Google Sign-In, migration): **[docs/CLOUD-STORAGE
   deletions staying deleted), the remembered-people roster and its write ordering.
 * `tests/ai-extraction.test.js` — turning a model's structured answer into the review draft:
   quantities, missing prices, confidence tiers, mismatched totals, and junk responses.
+* `tests/merge-drafts.test.js` — joining receipts photographed in parts: ordering, overlap
+  detection, one-line ambiguity, totals from the right photo, and a failed photo mid-batch.
 * `tests/gemini-provider.test.js` — the model fallback chain, which HTTP statuses are worth
   retrying, the bound on how many calls a busy model can cost, and pulling usable JSON out of
   fenced/prose/thinking-step replies.

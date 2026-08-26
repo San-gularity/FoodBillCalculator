@@ -98,6 +98,7 @@ export function coerceBill(raw) {
         id: typeof raw.receipt.id === 'string' ? raw.receipt.id : 'receipt',
         capturedAt: typeof raw.receipt.capturedAt === 'string' ? raw.receipt.capturedAt : null,
         provider: typeof raw.receipt.provider === 'string' ? raw.receipt.provider : 'unknown',
+        photoCount: Number(raw.receipt.photoCount) > 0 ? Math.trunc(Number(raw.receipt.photoCount)) : 1,
         thumbnail: typeof raw.receipt.thumbnail === 'string' ? raw.receipt.thumbnail : null,
         rawText: typeof raw.receipt.rawText === 'string' ? raw.receipt.rawText.slice(0, 20000) : '',
       }

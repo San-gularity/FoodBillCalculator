@@ -102,6 +102,7 @@ export function createApp({ root, store, repo, settings = {} }) {
         id: draft.id,
         capturedAt: draft.capturedAt,
         provider: draft.provider,
+        photoCount: draft.sourceCount || 1,
         thumbnail: draft.thumbnail || null,
         rawText: draft.rawText || '',
       },

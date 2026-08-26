@@ -4,7 +4,7 @@
 import { escapeHtml, renderInto, on } from './dom.js';
 import { showSheet, toast, confirmSheet } from './components.js';
 import { formatMoney, centsToInput, parseMoneyInput } from '../core/money.js';
-import { scanReceiptImage, scanReceiptText } from '../scanner/index.js';
+import { scanReceiptImages, scanReceiptText, mergeReceiptDrafts } from '../scanner/index.js';
 import { confidenceTier, markItemEdited, markItemConfirmed } from '../scanner/parse-receipt.js';
 import { draftToCharges } from '../scanner/to-bill.js';
 import { ScannerError } from '../scanner/errors.js';
@@ -32,12 +32,12 @@ export function openScanner(app) {
         <label class="scan-option" tabindex="0" data-autofocus>
           <input type="file" accept="image/*" capture="environment" data-source="camera" hidden>
           <span class="scan-option__icon" aria-hidden="true">📸</span>
-          <span><strong>Take a photo</strong><small>Point at the receipt</small></span>
+          <span><strong>Take a photo</strong><small>You can add more shots after this one</small></span>
         </label>
         <label class="scan-option" tabindex="0">
-          <input type="file" accept="image/*" data-source="gallery" hidden>
+          <input type="file" accept="image/*" multiple data-source="gallery" hidden>
           <span class="scan-option__icon" aria-hidden="true">🖼️</span>
-          <span><strong>Choose an image</strong><small>From your photos or files</small></span>
+          <span><strong>Choose images</strong><small>Pick several if the receipt is long</small></span>
         </label>
         <button class="scan-option scan-option--ghost" data-action="type-receipt">
           <span class="scan-option__icon" aria-hidden="true">⌨️</span>
@@ -58,10 +58,10 @@ export function openScanner(app) {
       }
       root.querySelectorAll('input[type="file"]').forEach((input) => {
         input.addEventListener('change', () => {
-          const file = input.files && input.files[0];
-          if (!file) return;
+          const files = [...(input.files || [])];
+          if (!files.length) return;
           close();
-          runScan(app, file);
+          runScan(app, files);
         });
       });
       root.querySelectorAll('.scan-option[tabindex]').forEach((label) => {
@@ -116,7 +116,8 @@ function friendlyError(error) {
   return 'Something went wrong reading that receipt. You can type the items in instead.';
 }
 
-async function runScan(app, file) {
+async function runScan(app, files, existingDraft = null) {
+  const list = [...(Array.isArray(files) ? files : [files])];
   let cancelled = false;
   const handle = showSheet({
     title: 'Reading your receipt',
@@ -125,6 +126,7 @@ async function runScan(app, file) {
     render: () => `
       <div class="scan-progress">
         <div class="spinner" aria-hidden="true"></div>
+        ${list.length > 1 ? '<p class="scan-progress__photo" data-photo>Photo 1 of ' + list.length + '</p>' : ''}
         <p class="scan-progress__stage" data-stage>${STAGE_COPY.preparing}</p>
         <div class="progress progress--thin"><div class="progress__bar" data-bar style="width:8%"></div></div>
         <button class="btn btn--ghost btn--sm" data-cancel>Cancel</button>
@@ -137,7 +139,7 @@ async function runScan(app, file) {
     },
   });
 
-  const setStage = ({ stage, progress }) => {
+  const setStage = ({ stage, progress, photoIndex = 0, photoCount = list.length }) => {
     if (cancelled) return;
     const stageEl = handle.root.querySelector('[data-stage]');
     const bar = handle.root.querySelector('[data-bar]');
@@ -145,27 +147,37 @@ async function runScan(app, file) {
     if (bar) {
       const base = { preparing: 5, loading: 20, reading: 45, retrying: 45, parsing: 95 }[stage] ?? 10;
       const span = { preparing: 10, loading: 25, reading: 50, retrying: 50, parsing: 5 }[stage] ?? 10;
-      bar.style.width = `${Math.min(99, base + span * (Number(progress) || 0))}%`;
+      const within = Math.min(99, base + span * (Number(progress) || 0));
+      // Each photo owns its own slice of the bar.
+      bar.style.width = `${(photoIndex * 100 + within) / photoCount}%`;
     }
   };
 
+  const setPhoto = ({ index, count }) => {
+    const photoEl = handle.root.querySelector('[data-photo]');
+    if (photoEl) photoEl.textContent = `Photo ${index + 1} of ${count}`;
+  };
+
   try {
-    const draft = await scanReceiptImage(file, {
+    const scanned = await scanReceiptImages(list, {
       onProgress: setStage,
+      onPhoto: setPhoto,
       preferAi: aiIsOn(app),
       onNotice: (message) => toast(message, { tone: 'warn', duration: 5000 }),
     });
     if (cancelled) return;
     handle.close();
+    // Adding photos to a review already in progress keeps the edits made so far.
+    const draft = existingDraft ? mergeReceiptDrafts([existingDraft, scanned]) : scanned;
     openReview(app, draft);
   } catch (error) {
     if (cancelled) return;
     handle.close();
-    openScanError(app, error, file);
+    openScanError(app, error, list, existingDraft);
   }
 }
 
-function openScanError(app, error, file) {
+function openScanError(app, error, files, existingDraft = null) {
   showSheet({
     title: 'We couldn’t read that',
     size: 'sm',
@@ -183,7 +195,8 @@ function openScanError(app, error, file) {
     onMount: (root, close) => {
       root.querySelector('[data-retry]').addEventListener('click', () => {
         close();
-        openScanner(app);
+        if (existingDraft) openReview(app, existingDraft);
+        else openScanner(app);
       });
       root.querySelector('[data-type]').addEventListener('click', () => {
         close();
@@ -277,6 +290,14 @@ export function openReview(app, initialDraft) {
         inputs[inputs.length - 1]?.focus();
       });
 
+      on(container, 'change', '[data-add-photo]', (event, el) => {
+        const files = [...(el.files || [])];
+        if (!files.length) return;
+        close();
+        // Keep everything the user has already fixed, then merge the new part in.
+        runScan(app, files, draft);
+      });
+
       on(container, 'click', '[data-confirm-all]', async () => {
         const missing = unresolved(draft);
         if (missing.length) {
@@ -336,8 +357,9 @@ function refreshSummary(container, draft) {
   summary.innerHTML = summaryInnerHtml(draft.items.length, needsAttention);
 }
 
-function summaryInnerHtml(count, needsAttention) {
-  return `<strong>We found ${count} item${count === 1 ? '' : 's'}.</strong>
+function summaryInnerHtml(count, needsAttention, sourceCount = 1) {
+  const from = sourceCount > 1 ? ` <span class="review__from">across ${sourceCount} photos</span>` : '';
+  return `<strong>We found ${count} item${count === 1 ? '' : 's'}.</strong>${from}
     ${
       needsAttention
         ? `<span class="pill pill--warn">${needsAttention} need${needsAttention === 1 ? 's' : ''} a look</span>`
@@ -349,7 +371,7 @@ function reviewHtml(draft) {
   const needsAttention = draft.items.filter((item) => itemStatus(item) !== 'ok').length;
   return `
     <div class="review">
-      <div class="review__summary">${summaryInnerHtml(draft.items.length, needsAttention)}</div>
+      <div class="review__summary">${summaryInnerHtml(draft.items.length, needsAttention, draft.sourceCount)}</div>
 
       ${draft.warnings
         .filter((warning) => warning.code !== 'no-tax' || draft.taxCents == null)
@@ -362,7 +384,14 @@ function reviewHtml(draft) {
         ${draft.items.map(reviewRowHtml).join('')}
       </div>
 
-      <button class="btn btn--ghost btn--block" data-add-item>+ Add a missing item</button>
+      <div class="review__add-row">
+        <button class="btn btn--ghost" data-add-item>+ Add an item</button>
+        <label class="btn btn--ghost review__add-photo">
+          <input type="file" accept="image/*" multiple data-add-photo hidden>
+          📷 Add another photo
+        </label>
+      </div>
+      <p class="hint">Receipt longer than one photo? Add the next part — we'll join them and count any overlap once.</p>
 
       <div class="review__totals">
         ${totalFieldHtml('Subtotal', 'subtotal', draft.subtotalCents, 'optional')}

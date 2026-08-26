@@ -6,6 +6,7 @@
 // on the normalized draft, so replacing the provider is a one-line change.
 
 import { parseReceipt } from './parse-receipt.js';
+import { mergeReceiptDrafts } from './merge-drafts.js';
 import { prepareImage } from './image.js';
 import { scannerError, ScannerError } from './errors.js';
 import { tesseractProvider } from './providers/tesseract.js';
@@ -83,6 +84,47 @@ export async function scanReceiptImage(file, { onProgress, providerId, preferAi 
   return draft;
 }
 
+/**
+ * Scan a receipt that spans several photos. Each image goes through the same
+ * pipeline, then the parts are merged into one draft — overlapping lines
+ * counted once, totals taken from whichever photo shows them.
+ *
+ * @param {File[]|FileList} files in the order they were taken (top to bottom)
+ */
+export async function scanReceiptImages(files, options = {}) {
+  const list = [...(files || [])];
+  if (!list.length) throw scannerError('unsupported-file');
+  if (list.length === 1) return scanReceiptImage(list[0], options);
+
+  const { onProgress, onNotice, onPhoto } = options;
+  const drafts = [];
+  const failures = [];
+
+  for (let index = 0; index < list.length; index++) {
+    onPhoto?.({ index, count: list.length });
+    try {
+      const draft = await scanReceiptImage(list[index], {
+        ...options,
+        // Keep the per-photo progress bar inside this photo's slice of the bar.
+        onProgress: (update) => onProgress?.({ ...update, photoIndex: index, photoCount: list.length }),
+      });
+      drafts.push(draft);
+    } catch (error) {
+      failures.push({ index, error });
+    }
+  }
+
+  if (!drafts.length) throw failures[0]?.error || scannerError('ocr-failed');
+  if (failures.length) {
+    const which = failures.map((f) => f.index + 1).join(', ');
+    onNotice?.(`We couldn’t read photo ${which}. The other ${drafts.length} went through — add anything missing below.`);
+  }
+
+  const merged = mergeReceiptDrafts(drafts);
+  merged.failedPhotos = failures.length;
+  return merged;
+}
+
 /** Same pipeline for text someone pastes in — no camera, no network. */
 export async function scanReceiptText(text) {
   const result = await textProvider.recognize(text);
@@ -92,3 +134,4 @@ export async function scanReceiptText(text) {
 
 export { ScannerError };
 export { parseReceipt };
+export { mergeReceiptDrafts };

@@ -771,6 +771,10 @@ span.stack > .avatar + .avatar { margin-left: -6px; }
   border: 1px solid var(--border);
 }
 .review__rows { display: grid; gap: 8px; }
+.review__from { color: var(--muted); font-weight: 400; font-size: 13px; }
+.review__add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.review__add-photo { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+@media (max-width: 380px) { .review__add-row { grid-template-columns: 1fr; } }
 .review-row {
   display: grid;
   grid-template-columns: 20px 1fr auto;

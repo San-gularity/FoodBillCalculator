@@ -390,42 +390,11 @@ export function parseReceipt(input, options = {}) {
     totalsConfidence.subtotal = 0.55;
   }
 
-  const itemsSum = items.reduce((acc, item) => acc + (item.totalPriceCents || 0), 0);
-
-  if (totals.subtotal != null && items.length) {
-    const diff = Math.abs(itemsSum - totals.subtotal);
-    if (diff <= 2) {
-      // The items add up to the printed subtotal — strong evidence OCR was right.
-      for (const item of items) {
-        item.confidence.name = Math.min(1, item.confidence.name + 0.15);
-        item.confidence.price = Math.min(1, item.confidence.price + 0.25);
-      }
-    } else {
-      warnings.push({
-        code: 'subtotal-mismatch',
-        message: `Scanned items add up to ${(itemsSum / 100).toFixed(2)}, but the receipt says ${(totals.subtotal / 100).toFixed(2)}.`,
-        diffCents: itemsSum - totals.subtotal,
-      });
-      for (const item of items) item.confidence.price = Math.max(0, item.confidence.price - 0.15);
-    }
-  }
-
-  if (!items.length) {
-    warnings.push({ code: 'no-items', message: 'We couldn’t find any items on this receipt.' });
-  }
-  if (totals.tax == null) {
-    warnings.push({ code: 'no-tax', message: 'We couldn’t find a tax line. Add it if the receipt has one.' });
-  }
-  if (totals.total == null) {
-    warnings.push({ code: 'no-total', message: 'We couldn’t find the receipt total.' });
-  }
-
-  for (const item of items) finalizeConfidence(item);
-
-  return {
+  return finalizeDraft({
     id: createId('receipt'),
     provider: options.provider || 'unknown',
     capturedAt: options.capturedAt || null,
+    sourceCount: 1,
     items,
     subtotalCents: totals.subtotal,
     taxCents: totals.tax,
@@ -434,10 +403,9 @@ export function parseReceipt(input, options = {}) {
     discountCents: totals.discount,
     totalCents: totals.total,
     fieldConfidence: totalsConfidence,
-    warnings,
+    warnings: [],
     rawText: lines.map((l) => l.text).join('\n'),
-    itemsSumCents: itemsSum,
-  };
+  });
 }
 
 /**
@@ -496,12 +464,7 @@ export function createDraftFromStructured(data, options = {}) {
 
   const deduped = dropRepeatedLines(items, subtotal);
   const finalItems = deduped.removed.length ? deduped.items : flagUnverifiedRepeats(deduped.items);
-  const itemsSum = finalItems.reduce((acc, item) => acc + (item.totalPriceCents || 0), 0);
   const warnings = [];
-
-  if (!finalItems.length) warnings.push({ code: 'no-items', message: 'We couldn’t find any items on this receipt.' });
-  if (tax == null) warnings.push({ code: 'no-tax', message: 'We couldn’t find a tax line. Add it if the receipt has one.' });
-  if (total == null) warnings.push({ code: 'no-total', message: 'We couldn’t find the receipt total.' });
   if (deduped.removed.length) {
     warnings.push({
       code: 'duplicate-removed',
@@ -510,21 +473,12 @@ export function createDraftFromStructured(data, options = {}) {
       } counted once, to match the printed subtotal.`,
     });
   }
-  if (subtotal != null && finalItems.length && Math.abs(itemsSum - subtotal) > 2) {
-    warnings.push({
-      code: 'subtotal-mismatch',
-      message: `Scanned items add up to ${(itemsSum / 100).toFixed(2)}, but the receipt says ${(subtotal / 100).toFixed(2)}.`,
-      diffCents: itemsSum - subtotal,
-    });
-    for (const item of finalItems) item.confidence.price = Math.max(0, item.confidence.price - 0.15);
-  }
 
-  for (const item of finalItems) finalizeConfidence(item);
-
-  return {
+  return finalizeDraft({
     id: createId('receipt'),
     provider: options.provider || 'ai',
     capturedAt: options.capturedAt || null,
+    sourceCount: 1,
     merchant: typeof raw.merchant === 'string' ? raw.merchant.slice(0, 80) : null,
     items: finalItems,
     subtotalCents: subtotal,
@@ -541,8 +495,7 @@ export function createDraftFromStructured(data, options = {}) {
     },
     warnings,
     rawText: typeof raw.raw_text === 'string' ? raw.raw_text.slice(0, 20000) : '',
-    itemsSumCents: itemsSum,
-  };
+  });
 }
 
 /** First present value among several possible key spellings. */
@@ -596,7 +549,10 @@ function flagUnverifiedRepeats(items) {
     const item = items[i];
     if (!sameName(previous.name, item.name) || previous.totalPriceCents !== item.totalPriceCents) continue;
     if (item.totalPriceCents == null) continue;
-    item.confidence.price = Math.min(item.confidence.price, 0.6);
+    // Lower the reader's own opinion, so re-finalising keeps the doubt.
+    item.base = item.base || { name: item.confidence.name, price: item.confidence.price };
+    item.base.price = Math.min(item.base.price, 0.6);
+    item.confidence.price = item.base.price;
     item.note = 'This line appears twice on the receipt. Keep it only if you were charged twice.';
   }
   return items;
@@ -633,12 +589,63 @@ function makeDraftItem({
           : Math.round(totalPriceCents / (quantity || 1)),
     totalPriceCents: totalPriceCents == null ? null : totalPriceCents,
     confidence: { name: nameConfidence, price: priceConfidence, overall: 0 },
+    // The reader's own opinion, before any subtotal cross-check adjusts it.
+    base: { name: nameConfidence, price: priceConfidence },
     status: 'pending', // 'pending' | 'confirmed' | 'edited'
     raw,
     note,
     lineIndex,
     onlyInsideItemBlock,
   };
+}
+
+const RECOMPUTED_WARNINGS = new Set(['no-items', 'no-tax', 'no-total', 'subtotal-mismatch']);
+
+/**
+ * Recompute everything that depends on the item list: the running total, the
+ * warnings, and how much each item should be trusted. Used by the text parser,
+ * the AI normaliser and the multi-photo merge, so all three end up identical.
+ * Safe to run again after items change; user edits are left alone.
+ */
+export function finalizeDraft(draft) {
+  const items = draft.items || [];
+  const itemsSum = items.reduce((acc, item) => acc + (item.totalPriceCents || 0), 0);
+  const subtotal = draft.subtotalCents;
+  const matchesSubtotal = subtotal != null && items.length > 0 && Math.abs(itemsSum - subtotal) <= 2;
+
+  for (const item of items) {
+    if (item.status !== 'pending') continue; // the user has already spoken
+    const base = item.base || { name: item.confidence.name, price: item.confidence.price };
+    item.base = base;
+    item.confidence.name = base.name;
+    item.confidence.price = base.price;
+    if (matchesSubtotal) {
+      // The items add up to the printed subtotal — strong evidence they're right.
+      item.confidence.name = Math.min(1, base.name + 0.15);
+      item.confidence.price = Math.min(1, base.price + 0.25);
+    } else if (subtotal != null && items.length > 0) {
+      item.confidence.price = Math.max(0, base.price - 0.15);
+    }
+    finalizeConfidence(item);
+  }
+
+  const warnings = (draft.warnings || []).filter((warning) => !RECOMPUTED_WARNINGS.has(warning.code));
+  if (!items.length) warnings.unshift({ code: 'no-items', message: 'We couldn’t find any items on this receipt.' });
+  if (draft.taxCents == null) {
+    warnings.push({ code: 'no-tax', message: 'We couldn’t find a tax line. Add it if the receipt has one.' });
+  }
+  if (draft.totalCents == null) warnings.push({ code: 'no-total', message: 'We couldn’t find the receipt total.' });
+  if (subtotal != null && items.length && !matchesSubtotal) {
+    warnings.push({
+      code: 'subtotal-mismatch',
+      message: `Scanned items add up to ${(itemsSum / 100).toFixed(2)}, but the receipt says ${(subtotal / 100).toFixed(2)}.`,
+      diffCents: itemsSum - subtotal,
+    });
+  }
+
+  draft.itemsSumCents = itemsSum;
+  draft.warnings = warnings;
+  return draft;
 }
 
 function finalizeConfidence(item) {
