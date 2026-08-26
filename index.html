@@ -1,37 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Food Sharing Calculator</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="description" content="Scan a receipt, add the people, tap who had what — everyone's share works out to the cent.">
+  <title>Split the Bill</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
 </head>
-<body class="light-mode">
-    <div class="navbar">
-        <h1>Food Sharing Calculator</h1>
+<body>
+  <div id="splash" class="splash">
+    <div class="splash__mark" aria-hidden="true">🧾</div>
+    <p>Loading your bill…</p>
+  </div>
+
+  <div id="app" class="app" hidden></div>
+
+  <noscript>
+    <div class="fatal">
+      <h1>JavaScript required</h1>
+      <p>This bill splitter runs entirely in your browser and needs JavaScript switched on.</p>
     </div>
+  </noscript>
 
-    <div class="container">
-        <h2>Food and Price Details</h2>
-        <div class="input-group">
-            <input type="text" id="foodItem" placeholder="Food item">
-            <input type="number" id="foodPrice" placeholder="Price">
-            <button id="addFood">Add Food Item</button>
-        </div>
-        <div id="foodTable" class="table-container"></div>
-
-        <h2>People and Their Food Orders</h2>
-        <div class="input-group">
-            <input type="text" id="personName" placeholder="Person's name">
-            <select id="foodDropdown" multiple></select>
-            <button id="addPerson">Add Person's Order</button>
-        </div>
-        <div id="ordersTable" class="table-container"></div>
-
-        <h2>Individual Shares</h2>
-        <div id="sharesTable" class="table-container"></div>
-    </div>
-
-    <script src="script.js"></script>
+  <!-- Optional scanner config (Gemini key). Served from .env by npm start. -->
+  <script src="config.js"></script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
