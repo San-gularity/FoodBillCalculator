@@ -8,7 +8,9 @@
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="description" content="Scan a receipt, add the people, tap who had what — everyone's share works out to the cent.">
   <title>Split the Bill</title>
-  <link rel="stylesheet" href="styles.css">
+  <!-- ?v= is a cache buster: bump it whenever you deploy, so browsers can't
+       serve a stylesheet or script cached from an earlier version of the app. -->
+  <link rel="stylesheet" href="styles.css?v=2026-08-26">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
 </head>
 <body>
@@ -27,7 +29,7 @@
   </noscript>
 
   <!-- Optional scanner config (Gemini key). Served from .env by npm start. -->
-  <script src="config.js"></script>
-  <script type="module" src="src/main.js"></script>
+  <script src="config.js?v=2026-08-26"></script>
+  <script type="module" src="src/main.js?v=2026-08-26"></script>
 </body>
 </html>
