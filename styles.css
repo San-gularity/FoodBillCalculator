@@ -403,6 +403,58 @@ button { cursor: pointer; }
   resize: vertical;
 }
 
+/* ---- the maths ledger ---- */
+
+.ledger { display: grid; }
+.ledger__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ledger__row:last-child { border-bottom: 0; }
+.ledger__row--input { cursor: text; }
+.ledger__row--total {
+  border-bottom: 0;
+  border-top: 2px solid var(--border);
+  margin-top: 2px;
+  padding-top: 11px;
+  font-weight: 700;
+}
+.ledger__label { display: grid; gap: 1px; font-size: 15px; min-width: 0; }
+.ledger__label small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.ledger__value { font-variant-numeric: tabular-nums; font-weight: 650; white-space: nowrap; }
+.ledger__input { min-height: 40px; width: 118px; flex: none; padding: 0 10px; }
+.ledger__input input { text-align: right; font-variant-numeric: tabular-nums; }
+.ledger--check { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.ledger__status { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.ledger__status.is-ok { color: var(--ok); }
+.ledger__status.is-warn { color: var(--warn); font-weight: 600; }
+
+.split-mode { margin-top: 14px; display: grid; gap: 8px; }
+.split-mode__label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.segmented__option {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 9px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background .15s, color .15s;
+}
+.segmented__option.is-on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
 /* ---- items ---- */
 
 .scan-strip { display: flex; gap: 10px; }

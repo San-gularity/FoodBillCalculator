@@ -33,7 +33,7 @@ test('the README example splits and taxes exactly', () => {
   assert.equal(summary.reconciles, true);
 });
 
-test('proportional tax matches the worked example ($100 + $10 tax, 60/40)', () => {
+test('tax is split equally by default, whatever people ate', () => {
   const { bill } = makeBill({
     people: ['San', 'Alex'],
     items: [
@@ -43,7 +43,56 @@ test('proportional tax matches the worked example ($100 + $10 tax, 60/40)', () =
     taxCents: 1000,
   });
   const summary = calculateFinalTotals(bill);
+  assert.deepEqual(summary.people.map((p) => p.taxCents), [500, 500], 'same tax each');
+  assert.deepEqual(totalsByName(summary), { San: 6500, Alex: 4500 });
+  assert.equal(summary.chargedCents, summary.totalCents);
+});
+
+test('proportional stays available for bills that want it (60/40 of $10 tax)', () => {
+  const { bill } = makeBill({
+    people: ['San', 'Alex'],
+    items: [
+      { name: 'Steak', priceCents: 6000, people: ['San'] },
+      { name: 'Pasta', priceCents: 4000, people: ['Alex'] },
+    ],
+    taxCents: 1000,
+    sharedChargeSplit: 'proportional',
+  });
+  const summary = calculateFinalTotals(bill);
   assert.deepEqual(totalsByName(summary), { San: 6600, Alex: 4400 });
+});
+
+test('an equally split pool with odd pennies still reconciles', () => {
+  const { bill } = makeBill({
+    people: ['A', 'B', 'C'],
+    items: [
+      { name: 'Shared', priceCents: 3000, people: ['A', 'B', 'C'] },
+      { name: 'Solo', priceCents: 1000, people: ['A'] },
+    ],
+    taxCents: 100,
+    extraCents: 250, // bag charge + service
+  });
+  const summary = calculateFinalTotals(bill);
+  assert.deepEqual(summary.people.map((p) => p.taxCents), [34, 33, 33]);
+  assert.deepEqual(summary.people.map((p) => p.extraCents), [84, 83, 83]);
+  assert.equal(summary.chargedCents, summary.totalCents);
+});
+
+test('someone with nothing assigned yet is not charged tax', () => {
+  const { bill } = makeBill({
+    people: ['San', 'Alex', 'Guest'],
+    items: [
+      { name: 'Pizza', priceCents: 2000, people: ['San'] },
+      { name: 'Pasta', priceCents: 1000, people: ['Alex'] },
+    ],
+    taxCents: 300,
+  });
+  const summary = calculateFinalTotals(bill);
+  const guest = summary.people.find((p) => p.name === 'Guest');
+  assert.equal(guest.taxCents, 0);
+  assert.equal(guest.totalCents, 0);
+  assert.deepEqual(summary.people.filter((p) => p.name !== 'Guest').map((p) => p.taxCents), [150, 150]);
+  assert.equal(summary.chargedCents, summary.totalCents);
 });
 
 test('items with different numbers of people all reconcile', () => {
@@ -91,7 +140,7 @@ test('unassigned items are reported, not silently charged to someone', () => {
   assert.deepEqual(totalsByName(summary), { San: 2000, Alex: 0 });
 });
 
-test('tax with nothing assigned yet is shared evenly instead of crashing', () => {
+test('tax with nothing assigned at all is shared evenly instead of crashing', () => {
   const { bill } = makeBill({
     people: ['A', 'B', 'C'],
     items: [{ name: 'Pizza', priceCents: 2000, people: [] }],
@@ -141,7 +190,7 @@ test('discounts (negative lines) reduce a share and still reconcile', () => {
   assert.deepEqual(totalsByName(summary), { San: 825, Alex: 825 });
 });
 
-test('tip and fees ride along with tax, proportionally', () => {
+test('service charges and fees are shared exactly like tax', () => {
   const { bill } = makeBill({
     people: ['San', 'Alex'],
     items: [
@@ -149,11 +198,15 @@ test('tip and fees ride along with tax, proportionally', () => {
       { name: 'Salad', priceCents: 2500, people: ['Alex'] },
     ],
     taxCents: 1000,
-    extraCents: 2000,
+    extraCents: 2000, // service charge + bag fee
   });
   const summary = calculateFinalTotals(bill);
-  assert.deepEqual(totalsByName(summary), { San: 9750, Alex: 3250 });
+  assert.deepEqual(totalsByName(summary), { San: 9000, Alex: 4000 }, 'both pools split down the middle');
+  assert.equal(summary.sharedPoolCents, 3000);
   assert.equal(summary.chargedCents, summary.totalCents);
+
+  const proportional = calculateFinalTotals({ ...bill, sharedChargeSplit: 'proportional' });
+  assert.deepEqual(totalsByName(proportional), { San: 9750, Alex: 3250 });
 });
 
 test('building blocks are usable on their own', () => {
@@ -188,7 +241,13 @@ test('a big randomised bill always reconciles to the cent', () => {
         people: sharers.length ? sharers : [people[0]],
       };
     });
-    const { bill } = makeBill({ people, items, taxCents: Math.floor(rand() * 900), extraCents: Math.floor(rand() * 500) });
+    const { bill } = makeBill({
+      people,
+      items,
+      taxCents: Math.floor(rand() * 900),
+      extraCents: Math.floor(rand() * 500),
+      sharedChargeSplit: round % 2 ? 'equal' : 'proportional',
+    });
     const summary = calculateFinalTotals(bill);
     assert.equal(summary.chargedCents, summary.totalCents, `round ${round}`);
     assert.equal(summary.reconciles, true, `round ${round}`);

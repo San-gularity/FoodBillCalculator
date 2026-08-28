@@ -248,6 +248,11 @@ export function createStore(initial = {}) {
     setTax(cents) {
       setBill((bill) => ({ ...bill, taxCents: Math.trunc(Number(cents) || 0) }));
     },
+    setSharedChargeSplit(mode) {
+      const sharedChargeSplit = mode === 'proportional' ? 'proportional' : 'equal';
+      if (state.bill.sharedChargeSplit === sharedChargeSplit) return;
+      setBill((bill) => ({ ...bill, sharedChargeSplit }));
+    },
     setExtra(cents, label) {
       setBill((bill) => ({
         ...bill,

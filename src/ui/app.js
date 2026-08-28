@@ -188,6 +188,9 @@ export function createApp({ root, store, repo, settings = {} }) {
       case 'toggle-person':
         store.toggleExpandedPerson(el.dataset.id);
         break;
+      case 'set-split-mode':
+        store.setSharedChargeSplit(el.dataset.mode);
+        break;
       case 'absorb-diff': {
         const diff = summary().differenceCents;
         store.absorbDifferenceAsExtra(diff);

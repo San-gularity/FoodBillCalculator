@@ -29,14 +29,29 @@ export function calculatePersonSubtotal(personId, items) {
 }
 
 /**
- * Share a pooled amount (tax, tip, fees) across people in proportion to what
- * they ate. Falls back to an even split when nobody has a subtotal yet.
+ * Share a pooled amount — tax, service charge, bag fee, tip — across people.
+ *
+ * 'equal' (the default): everyone who had something pays the same amount.
+ *   Someone with nothing assigned yet pays nothing, so the numbers don't jump
+ *   around while items are still being assigned; if nobody has anything yet,
+ *   it is split across everyone.
+ * 'proportional': the pool follows each person's subtotal.
+ *
  * `subtotals` is an array of cents; the return is a matching array of cents
- * that sums to exactly `poolCents`.
+ * summing to exactly `poolCents`, odd pennies handed out one each.
  */
-export function calculateTaxShares(subtotals, poolCents) {
+export function calculateSharedShares(subtotals, poolCents, mode = 'equal') {
   if (!subtotals.length) return [];
-  return reconcileRounding(poolCents, subtotals);
+  if (mode === 'proportional') return reconcileRounding(poolCents, subtotals);
+
+  const participants = subtotals.map((subtotal) => (subtotal !== 0 ? 1 : 0));
+  const anyParticipants = participants.some((weight) => weight === 1);
+  return reconcileRounding(poolCents, anyParticipants ? participants : subtotals.map(() => 1));
+}
+
+/** Proportional sharing, kept under its original name. */
+export function calculateTaxShares(subtotals, poolCents) {
+  return calculateSharedShares(subtotals, poolCents, 'proportional');
 }
 
 /**
@@ -72,8 +87,9 @@ export function calculateFinalTotals(bill) {
   const subtotals = people.map((person) =>
     sumCents(items, (item) => itemShares[item.id].shares[person.id] || 0),
   );
-  const taxParts = calculateTaxShares(subtotals, taxCents);
-  const extraParts = calculateTaxShares(subtotals, extraCents);
+  const splitMode = bill?.sharedChargeSplit === 'proportional' ? 'proportional' : 'equal';
+  const taxParts = calculateSharedShares(subtotals, taxCents, splitMode);
+  const extraParts = calculateSharedShares(subtotals, extraCents, splitMode);
 
   const peopleTotals = people.map((person, index) => {
     const lines = [];
@@ -118,7 +134,9 @@ export function calculateFinalTotals(bill) {
     taxCents,
     extraCents,
     // A negative pool is a discount or a correction, never a "tip".
-    extraLabel: extraCents < 0 ? 'Adjustment' : bill?.extraLabel || 'Tip & fees',
+    extraLabel: extraCents < 0 ? 'Adjustment' : bill?.extraLabel || 'Service & fees',
+    splitMode,
+    sharedPoolCents: taxCents + extraCents,
     totalCents,
     chargedCents,
     declaredSubtotalCents: bill?.declaredSubtotalCents ?? null,

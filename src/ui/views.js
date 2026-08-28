@@ -35,42 +35,111 @@ function itemMeta(item) {
   )}</span>`;
 }
 
+/**
+ * The one place the three totals people confuse are shown together:
+ * what the items add up to, what gets added on top, and what the receipt says.
+ * Every row is labelled with where its number comes from.
+ */
 function chargesCard(bill, summary) {
-  const mismatch = summary.declaredTotalCents != null && Math.abs(summary.differenceCents) > 1;
+  const declared = summary.declaredTotalCents;
+  const mismatch = declared != null && Math.abs(summary.differenceCents) > 1;
   // Show an empty field rather than "0.00", or typing a tax lands as "0.001.23".
   const amountValue = (cents) => (cents ? escapeHtml(centsToInput(cents)) : '');
+
   return `
   <section class="card card--charges">
-    <h3 class="card__title">Tax &amp; extras</h3>
-    <div class="field-grid">
-      <label class="field">
-        <span class="field__label">Tax</span>
-        <span class="field__input">
+    <h3 class="card__title">The maths</h3>
+
+    <div class="ledger">
+      <div class="ledger__row">
+        <span class="ledger__label">Your items
+          <small>${summary.itemCount} line${summary.itemCount === 1 ? '' : 's'} in the app</small>
+        </span>
+        <span class="ledger__value">${formatMoney(summary.subtotalCents, summary.currency)}</span>
+      </div>
+
+      <label class="ledger__row ledger__row--input">
+        <span class="ledger__label">Tax <small>from the receipt</small></span>
+        <span class="field__input ledger__input">
           <span class="field__prefix">$</span>
           <input type="text" inputmode="decimal" data-action="set-tax" data-focus-key="tax"
                  value="${amountValue(bill.taxCents)}" placeholder="0.00" aria-label="Tax amount">
         </span>
       </label>
-      <label class="field">
-        <span class="field__label">${escapeHtml(bill.extraLabel || 'Tip & fees')}</span>
-        <span class="field__input">
+
+      <label class="ledger__row ledger__row--input">
+        <span class="ledger__label">${escapeHtml(bill.extraLabel || 'Service & fees')}
+          <small>service charge, bag fee, tip</small>
+        </span>
+        <span class="field__input ledger__input">
           <span class="field__prefix">$</span>
           <input type="text" inputmode="decimal" data-action="set-extra" data-focus-key="extra"
-                 value="${amountValue(bill.extraCents)}" placeholder="0.00" aria-label="Tip and fees">
+                 value="${amountValue(bill.extraCents)}" placeholder="0.00" aria-label="Service and fees">
         </span>
       </label>
-      <label class="field">
-        <span class="field__label">Receipt total <span class="field__hint">optional</span></span>
-        <span class="field__input">
+
+      <div class="ledger__row ledger__row--total">
+        <span class="ledger__label">Total to split <small>items + tax + fees</small></span>
+        <span class="ledger__value">${formatMoney(summary.totalCents, summary.currency)}</span>
+      </div>
+    </div>
+
+    ${sharedSplitToggle(summary)}
+
+    <div class="ledger ledger--check">
+      <label class="ledger__row ledger__row--input">
+        <span class="ledger__label">Receipt total <small>what the paper says — optional</small></span>
+        <span class="field__input ledger__input${mismatch ? ' is-warn' : ''}">
           <span class="field__prefix">$</span>
           <input type="text" inputmode="decimal" data-action="set-declared-total" data-focus-key="declared-total"
-                 value="${escapeHtml(bill.declaredTotalCents == null ? '' : centsToInput(bill.declaredTotalCents))}"
+                 value="${declared == null ? '' : escapeHtml(centsToInput(declared))}"
                  placeholder="optional" aria-label="Receipt total">
         </span>
       </label>
+      ${
+        declared == null
+          ? '<p class="ledger__status">Add it and we’ll check your items against it.</p>'
+          : mismatch
+            ? `<p class="ledger__status is-warn">⚠ Your items are ${formatMoney(
+                Math.abs(summary.differenceCents),
+                summary.currency,
+              )} ${summary.differenceCents > 0 ? 'short of' : 'over'} the receipt.</p>`
+            : '<p class="ledger__status is-ok">✓ Matches your items exactly.</p>'
+      }
     </div>
+
     ${mismatch ? mismatchNotice(summary) : ''}
   </section>`;
+}
+
+/** Tax and fees: the same amount each, or scaled to what people ate. */
+function sharedSplitToggle(summary) {
+  const equal = summary.splitMode !== 'proportional';
+  const sharers = summary.people.filter((person) => person.lines.length).length || summary.peopleCount;
+  const each = sharers ? Math.round(summary.sharedPoolCents / sharers) : 0;
+
+  const note = !summary.sharedPoolCents
+    ? 'No tax or fees on this bill yet.'
+    : equal
+      ? sharers
+        ? `${formatMoney(summary.sharedPoolCents, summary.currency)} split equally — about ${formatMoney(
+            each,
+            summary.currency,
+          )} each.`
+        : `${formatMoney(summary.sharedPoolCents, summary.currency)} to split equally once people are added.`
+      : `${formatMoney(summary.sharedPoolCents, summary.currency)} shared in proportion to what each person had.`;
+
+  return `
+    <div class="split-mode">
+      <span class="split-mode__label">Tax &amp; fees split</span>
+      <div class="segmented" role="group" aria-label="How tax and fees are split">
+        <button type="button" class="segmented__option${equal ? ' is-on' : ''}"
+                data-action="set-split-mode" data-mode="equal" aria-pressed="${equal}">Equally</button>
+        <button type="button" class="segmented__option${equal ? '' : ' is-on'}"
+                data-action="set-split-mode" data-mode="proportional" aria-pressed="${!equal}">By what each had</button>
+      </div>
+      <p class="hint">${note}</p>
+    </div>`;
 }
 
 /**
@@ -86,8 +155,8 @@ export function mismatchNotice(summary) {
     <div class="notice notice--warn mismatch">
       <p class="mismatch__title">These don’t add up${over ? '' : ' either'}.</p>
       <div class="mismatch__rows">
-        ${moneyRow('Items, tax & extras', summary.totalCents, summary.currency)}
-        ${moneyRow('Receipt total you entered', summary.declaredTotalCents, summary.currency)}
+        ${moneyRow('Your items + tax + fees', summary.totalCents, summary.currency)}
+        ${moneyRow('Receipt total', summary.declaredTotalCents, summary.currency)}
         <div class="money-row money-row--strong">
           <span>Difference</span>
           <span class="money-row__value">${gap} ${over ? 'over' : 'under'}</span>
@@ -99,7 +168,7 @@ export function mismatchNotice(summary) {
           My items are right — set total to ${formatMoney(summary.totalCents, summary.currency)}
         </button>
         <button class="btn btn--sm btn--ghost" data-action="absorb-diff">
-          Receipt is right — add ${gap} as ${diff > 0 ? 'tip &amp; fees' : 'a discount'}
+          Receipt is right — add ${gap} as ${diff > 0 ? 'service &amp; fees' : 'a discount'}
         </button>
       </div>
     </div>`;
@@ -117,12 +186,30 @@ function heroCard(summary) {
 }
 
 function totalsCard(summary) {
+  const how = summary.splitMode === 'proportional' ? 'by what each had' : 'split equally';
   return `
   <section class="card card--totals">
-    ${moneyRow('Subtotal', summary.subtotalCents, summary.currency)}
-    ${summary.taxCents ? moneyRow('Tax', summary.taxCents, summary.currency) : ''}
-    ${summary.extraCents ? moneyRow(summary.extraLabel, summary.extraCents, summary.currency, { negative: summary.extraCents < 0 }) : ''}
-    ${moneyRow('Bill total', summary.totalCents, summary.currency, { strong: true })}
+    ${moneyRow(`Your items (${summary.itemCount})`, summary.subtotalCents, summary.currency)}
+    ${summary.taxCents ? moneyRow(`Tax — ${how}`, summary.taxCents, summary.currency) : ''}
+    ${
+      summary.extraCents
+        ? moneyRow(`${summary.extraLabel} — ${how}`, summary.extraCents, summary.currency, {
+            negative: summary.extraCents < 0,
+          })
+        : ''
+    }
+    ${moneyRow('Total to split', summary.totalCents, summary.currency, { strong: true })}
+    ${
+      summary.declaredTotalCents != null
+        ? `<p class="ledger__status ${
+            Math.abs(summary.differenceCents) > 1 ? 'is-warn' : 'is-ok'
+          }">${
+            Math.abs(summary.differenceCents) > 1
+              ? `⚠ Receipt total says ${formatMoney(summary.declaredTotalCents, summary.currency)}`
+              : `✓ Agrees with the receipt total`
+          }</p>`
+        : ''
+    }
   </section>`;
 }
 
@@ -201,7 +288,6 @@ export function itemsView(state, summary) {
     }
 
     ${hasItems ? chargesCard(bill, summary) : ''}
-    ${hasItems ? totalsCard(summary) : ''}
   </div>`;
 }
 
@@ -414,8 +500,26 @@ export function reviewView(state, summary) {
                        : '<p class="hint">Nothing assigned to this person yet.</p>'
                    }
                    ${moneyRow('Subtotal', person.subtotalCents, summary.currency)}
-                   ${person.taxCents ? moneyRow('Tax share', person.taxCents, summary.currency, { muted: true }) : ''}
-                   ${person.extraCents ? moneyRow(`${summary.extraLabel} share`, person.extraCents, summary.currency, { muted: true }) : ''}
+                   ${
+                     person.taxCents
+                       ? moneyRow(
+                           summary.splitMode === 'proportional' ? 'Tax share' : 'Tax (equal share)',
+                           person.taxCents,
+                           summary.currency,
+                           { muted: true },
+                         )
+                       : ''
+                   }
+                   ${
+                     person.extraCents
+                       ? moneyRow(
+                           `${summary.extraLabel}${summary.splitMode === 'proportional' ? ' share' : ' (equal share)'}`,
+                           person.extraCents,
+                           summary.currency,
+                           { muted: true },
+                         )
+                       : ''
+                   }
                    ${moneyRow('Total', person.totalCents, summary.currency, { strong: true })}
                  </div>`
               : `<div class="person-total__preview">${
@@ -471,9 +575,12 @@ export function reviewView(state, summary) {
 
 export function summaryText(bill, summary) {
   const lines = [`${bill.name} — ${formatMoney(summary.totalCents, summary.currency)}`, ''];
-  lines.push(`Subtotal ${formatMoney(summary.subtotalCents, summary.currency)}`);
-  if (summary.taxCents) lines.push(`Tax ${formatMoney(summary.taxCents, summary.currency)}`);
-  if (summary.extraCents) lines.push(`${summary.extraLabel} ${formatMoney(summary.extraCents, summary.currency)}`);
+  const how = summary.splitMode === 'proportional' ? 'by what each had' : 'split equally';
+  lines.push(`Items ${formatMoney(summary.subtotalCents, summary.currency)}`);
+  if (summary.taxCents) lines.push(`Tax ${formatMoney(summary.taxCents, summary.currency)} (${how})`);
+  if (summary.extraCents) {
+    lines.push(`${summary.extraLabel} ${formatMoney(summary.extraCents, summary.currency)} (${how})`);
+  }
   lines.push('');
   for (const person of summary.people) {
     lines.push(`${person.name}: ${formatMoney(person.totalCents, summary.currency)}`);

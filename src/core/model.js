@@ -54,7 +54,11 @@ export function createBill(partial = {}) {
     taxCents: 0,
     // Tip, service charge, fees or a discount (negative). Shared like tax.
     extraCents: 0,
-    extraLabel: 'Tip & fees',
+    extraLabel: 'Service & fees',
+    // How tax, service charges, bag fees and tip are shared out:
+    // 'equal' — everyone with items pays the same amount (the default)
+    // 'proportional' — bigger eaters carry more of it
+    sharedChargeSplit: 'equal',
     // What the receipt itself claimed, kept for reconciliation only.
     declaredSubtotalCents: null,
     declaredTotalCents: null,

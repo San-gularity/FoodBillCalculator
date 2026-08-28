@@ -303,3 +303,20 @@ Total 4.35`);
   assert.equal(draft.items.length, 2, 'both priced lines are kept');
   assert.equal(draft.itemsSumCents, 400);
 });
+
+test('service charges, bag fees and packaging land in the shared pool, not on items', () => {
+  const draft = parseReceipt(`Pizza 20.00
+Fries 8.00
+Subtotal 28.00
+Tax 2.45
+Service Charge 2.80
+Bag Charge 0.10
+Packaging Fee 0.50
+Total 33.85`);
+  assert.deepEqual(draft.items.map((i) => i.name), ['Pizza', 'Fries'], 'fees never become items');
+  assert.equal(draft.taxCents, 245);
+
+  const charges = draftToCharges(draft);
+  assert.equal(charges.extraCents, 340, 'service + bag + packaging pooled together');
+  assert.equal(charges.itemsSumCents + charges.taxCents + charges.extraCents, 3385, 'reconciles to the receipt total');
+});

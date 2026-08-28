@@ -90,7 +90,8 @@ export function coerceBill(raw) {
   base.people = (Array.isArray(raw.people) ? raw.people : []).map(coercePerson).filter(Boolean);
   base.taxCents = coerceInt(raw.taxCents, 0);
   base.extraCents = coerceInt(raw.extraCents, 0);
-  base.extraLabel = typeof raw.extraLabel === 'string' && raw.extraLabel ? raw.extraLabel : 'Tip & fees';
+  base.extraLabel = typeof raw.extraLabel === 'string' && raw.extraLabel ? raw.extraLabel : 'Service & fees';
+  base.sharedChargeSplit = raw.sharedChargeSplit === 'proportional' ? 'proportional' : 'equal';
   base.declaredSubtotalCents = coerceNullableInt(raw.declaredSubtotalCents);
   base.declaredTotalCents = coerceNullableInt(raw.declaredTotalCents);
   base.receipt = isObject(raw.receipt)

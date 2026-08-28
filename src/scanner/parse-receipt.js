@@ -25,7 +25,10 @@ const KEYWORDS = [
   { key: 'tax', re: /\b(sales\s*tax|tax(es)?\s*\d*|gst|hst|pst|qst|vat\s*\d*|tva|iva|mwst)\b/i },
   { key: 'tip', re: /\b(tip|gratuity|service\s*(charge|fee)|svc\s*chg)\b/i },
   { key: 'discount', re: /\b(discount|coupon|promo|savings|off)\b/i },
-  { key: 'fee', re: /\b(delivery|service fee|bag fee|convenience|surcharge)\b/i },
+  {
+    key: 'fee',
+    re: /\b(delivery|service\s*(fee|chg|charge)|bag\s*(fee|charge)|carry\s*out|packaging|handling|convenience|surcharge|processing\s*fee|environment(al)?\s*(fee|levy)|recycling)\b/i,
+  },
   { key: 'total', re: /\b(grand\s*total|total\s*due|amount\s*due|balance\s*due|totals?|totale|totaal|gesamt|summe|importe)\b/i },
   { key: 'payment', re: /\b(cash|change|visa|mastercard|amex|debit|credit|card|tender|auth|approval|chip|contactless|ref#?|acct)\b/i },
 ];
